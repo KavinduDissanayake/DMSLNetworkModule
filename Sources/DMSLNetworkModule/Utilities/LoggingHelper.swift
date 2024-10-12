@@ -19,7 +19,7 @@ final class NetworkLogger {
     func log(_ message: String, file: String = #file, function: String = #function, line: Int = #line) {
         let shortFileName = file.components(separatedBy: "/").last ?? "---"
         let header = "\(shortFileName) - \(function) - line \(line)"
-        let formattedMessage = "\n\(header)\n\(message)\n\(String(repeating: "-", count: header.count))\n"
+        let formattedMessage = "\n\(message)\n\(String(repeating: "-", count: header.count))\n"
         print(formattedMessage)
     }
     

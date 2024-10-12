@@ -90,15 +90,10 @@ public final class NetworkHelper {
             return
         }
         
-        
-        // Log request details
-        if config.enableLogging {
-            NetworkLogger.shared.logRequest(url: url, method: method.method.rawValue, headers: headers.dictionary, body: parameters)
-        }
-        
         customSession
             .request(url, method: method.method, parameters: parameters, encoding: JSONEncoding.default, headers: validatedHeaders)
             .validate(statusCode: 200..<300)
+            .debugLog(using: config)
             .responseDecodable(of: T.self) { response in
                 self.handleResponse(response: response, url: url, completion: completion)
             }
@@ -147,13 +142,7 @@ public final class NetworkHelper {
             completion(.failure(.UNHANDLED_ERROR(reason: "No file data provided")))
             return
         }
-        
-        
-        // Log request details
-        if config.enableLogging {
-            NetworkLogger.shared.logRequest(url: url, method: method.method.rawValue, headers: headers.dictionary, body: parameters)
-        }
-        
+
         customSession.upload(multipartFormData: { multipartFormData in
             if let parameters = parameters {
                 for (key, value) in parameters {
@@ -167,6 +156,7 @@ public final class NetworkHelper {
             }
         }, to: url, method: method.method, headers: validatedHeaders)
         .validate(statusCode: 200..<300)
+        .debugLog(using: config)
         .responseDecodable(of: T.self) { response in
             self.handleResponse(response: response, url: url, completion: completion)
         }
