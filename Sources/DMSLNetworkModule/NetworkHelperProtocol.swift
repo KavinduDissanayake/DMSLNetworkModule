@@ -111,13 +111,14 @@ public enum NetworkError: Error, Equatable {
 
 
 //// MARK: - NetworkHelper
-public final class NetworkHelper: NetworkHelperProtocol {
+public final class NetworkHelper {
+
     public var customSession: Session
-    private let config: NetworkConfiguration
-    private let interceptor: RequestInterceptor
+    private var config: NetworkConfiguration
+    private var interceptor: RequestInterceptor
 
     // MARK: - Singleton
-    public static let shared = NetworkHelper()
+    public static var shared: NetworkHelper = NetworkHelper(configuration: NetworkConfiguration())
 
     // MARK: - Initializer with Config
     public init(configuration: NetworkConfiguration = NetworkConfiguration()) {
@@ -135,19 +136,25 @@ public final class NetworkHelper: NetworkHelperProtocol {
         )
     }
 
-    // MARK: - Configurable Custom Session
-    public static func configureCustomSession(retryPolicy: RequestInterceptor, enableSSLPinning: Bool, pinnedDomains: [String: ServerTrustEvaluating]) -> Session {
-        var serverTrustManager: ServerTrustManager?
-        
-        if enableSSLPinning && !pinnedDomains.isEmpty {
-            serverTrustManager = ServerTrustManager(evaluators: pinnedDomains)
-        }
-        
-        return Session(
-            interceptor: retryPolicy,
-            serverTrustManager: serverTrustManager
-        )
+    // MARK: - Configure the Shared Instance
+    public static func configure(with configuration: NetworkConfiguration) {
+        NetworkHelper.shared = NetworkHelper(configuration: configuration)
     }
+    
+    // MARK: - Configurable Custom Session
+       public static func configureCustomSession(retryPolicy: RequestInterceptor, enableSSLPinning: Bool, pinnedDomains: [String: ServerTrustEvaluating]) -> Session {
+           var serverTrustManager: ServerTrustManager?
+
+           if enableSSLPinning && !pinnedDomains.isEmpty {
+               serverTrustManager = ServerTrustManager(evaluators: pinnedDomains)
+           }
+
+           return Session(
+               interceptor: retryPolicy,
+               serverTrustManager: serverTrustManager
+           )
+       }
+    
 
     // MARK: - Logging
     private func log(_ message: String) {
