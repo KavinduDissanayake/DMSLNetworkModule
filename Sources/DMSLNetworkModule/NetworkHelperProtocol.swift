@@ -1,6 +1,7 @@
 import Foundation
 import Alamofire
 
+
 // MARK: - NetworkConfiguration
 public struct NetworkConfiguration {
     public var retryLimit: Int
@@ -10,7 +11,7 @@ public struct NetworkConfiguration {
     public var enableLogging: Bool
     public var enableSSLPinning: Bool
     public var tokenStorageKey: String
-    public var pinnedDomains: [String: ServerTrustEvaluating] // Configurable SSL pinning domains
+    public var pinnedDomains: [String: ServerTrustEvaluating]
 
     public init(retryLimit: Int = 2,
                 exponentialBackoffBase: Double = 2.0,
@@ -19,7 +20,7 @@ public struct NetworkConfiguration {
                 enableLogging: Bool = true,
                 enableSSLPinning: Bool = true,
                 tokenStorageKey: String = "server_token",
-                pinnedDomains: [String: ServerTrustEvaluating] = [:]) { // Default: empty, user-configurable
+                pinnedDomains: [String: ServerTrustEvaluating] = [:]) {
         self.retryLimit = retryLimit
         self.exponentialBackoffBase = exponentialBackoffBase
         self.exponentialBackoffScale = exponentialBackoffScale
@@ -27,7 +28,94 @@ public struct NetworkConfiguration {
         self.enableLogging = enableLogging
         self.enableSSLPinning = enableSSLPinning
         self.tokenStorageKey = tokenStorageKey
-        self.pinnedDomains = pinnedDomains // User can pass their own pinned domains
+        self.pinnedDomains = pinnedDomains
+    }
+}
+
+// MARK: - NetworkHelper
+// MARK: - NetworkHelper
+public final class NetworkHelper {
+
+    // Use `var` to allow reassignment in the configure method
+    public var config: NetworkConfiguration
+    public var customSession: Session
+    public var interceptor: RequestInterceptor
+
+    // MARK: - Shared Singleton
+    public static let shared = NetworkHelper()
+
+    // MARK: - Private init for singleton
+    private init() {
+        // Initialize with a default configuration
+        self.config = NetworkConfiguration() // Default configuration
+        self.interceptor = RetryAndThrottleInterceptor(
+            retryLimit: config.retryLimit,
+            exponentialBackoffBase: config.exponentialBackoffBase,
+            exponentialBackoffScale: config.exponentialBackoffScale,
+            throttleInterval: config.throttleInterval
+        )
+        self.customSession = NetworkHelper.configureCustomSession(
+            retryPolicy: interceptor,
+            enableSSLPinning: config.enableSSLPinning,
+            pinnedDomains: config.pinnedDomains
+        )
+    }
+
+    // MARK: - Static Configuration Method
+    public static func configure(with configuration: NetworkConfiguration) {
+        let helper = NetworkHelper.shared
+        helper.config = configuration // Reassign the new configuration
+        helper.interceptor = RetryAndThrottleInterceptor(
+            retryLimit: configuration.retryLimit,
+            exponentialBackoffBase: configuration.exponentialBackoffBase,
+            exponentialBackoffScale: configuration.exponentialBackoffScale,
+            throttleInterval: configuration.throttleInterval
+        )
+        helper.customSession = NetworkHelper.configureCustomSession(
+            retryPolicy: helper.interceptor,
+            enableSSLPinning: configuration.enableSSLPinning,
+            pinnedDomains: configuration.pinnedDomains
+        )
+    }
+
+    // MARK: - Configurable Custom Session
+    public static func configureCustomSession(retryPolicy: RequestInterceptor, enableSSLPinning: Bool, pinnedDomains: [String: ServerTrustEvaluating]) -> Session {
+        var serverTrustManager: ServerTrustManager?
+        
+        if enableSSLPinning && !pinnedDomains.isEmpty {
+            serverTrustManager = ServerTrustManager(evaluators: pinnedDomains)
+        }
+        
+        return Session(
+            interceptor: retryPolicy,
+            serverTrustManager: serverTrustManager
+        )
+    }
+}
+
+
+// MARK: - RetryAndThrottleInterceptor (Handles Retry and Throttling)
+public class RetryAndThrottleInterceptor: RequestInterceptor {
+    private let retryLimit: Int
+    private let exponentialBackoffBase: Double
+    private let exponentialBackoffScale: TimeInterval
+    private let throttleInterval: TimeInterval
+    
+    public init(retryLimit: Int, exponentialBackoffBase: Double, exponentialBackoffScale: TimeInterval, throttleInterval: TimeInterval) {
+        self.retryLimit = retryLimit
+        self.exponentialBackoffBase = exponentialBackoffBase
+        self.exponentialBackoffScale = exponentialBackoffScale
+        self.throttleInterval = throttleInterval
+    }
+    
+    public func retry(_ request: Request, for session: Session, dueTo error: Error, completion: @escaping (RetryResult) -> Void) {
+        let retryCount = request.retryCount
+        guard retryCount < retryLimit else {
+            return completion(.doNotRetry)
+        }
+        
+        let backoffDelay = pow(exponentialBackoffBase, Double(retryCount)) * exponentialBackoffScale
+        completion(.retryWithDelay(backoffDelay))
     }
 }
 
@@ -387,7 +475,7 @@ extension Data {
     // Determine MIME type based on file extension
     func mimeType() -> String {
         let fileExtension = self.fileExtension()
-        
+
         switch fileExtension.lowercased() {
         case "jpg", "jpeg": return "image/jpeg"
         case "png": return "image/png"
