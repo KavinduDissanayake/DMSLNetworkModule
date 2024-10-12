@@ -1,7 +1,6 @@
 import Foundation
 import Alamofire
 
-
 // MARK: - NetworkConfiguration
 public struct NetworkConfiguration {
     public var retryLimit: Int
@@ -11,7 +10,7 @@ public struct NetworkConfiguration {
     public var enableLogging: Bool
     public var enableSSLPinning: Bool
     public var tokenStorageKey: String
-    public var pinnedDomains: [String: ServerTrustEvaluating]
+    public var pinnedDomains: [String: ServerTrustEvaluating] // Configurable SSL pinning domains
 
     public init(retryLimit: Int = 2,
                 exponentialBackoffBase: Double = 2.0,
@@ -20,7 +19,7 @@ public struct NetworkConfiguration {
                 enableLogging: Bool = true,
                 enableSSLPinning: Bool = true,
                 tokenStorageKey: String = "server_token",
-                pinnedDomains: [String: ServerTrustEvaluating] = [:]) {
+                pinnedDomains: [String: ServerTrustEvaluating] = [:]) { // Default: empty, user-configurable
         self.retryLimit = retryLimit
         self.exponentialBackoffBase = exponentialBackoffBase
         self.exponentialBackoffScale = exponentialBackoffScale
@@ -28,94 +27,7 @@ public struct NetworkConfiguration {
         self.enableLogging = enableLogging
         self.enableSSLPinning = enableSSLPinning
         self.tokenStorageKey = tokenStorageKey
-        self.pinnedDomains = pinnedDomains
-    }
-}
-
-// MARK: - NetworkHelper
-// MARK: - NetworkHelper
-public final class NetworkHelper {
-
-    // Use `var` to allow reassignment in the configure method
-    public var config: NetworkConfiguration
-    public var customSession: Session
-    public var interceptor: RequestInterceptor
-
-    // MARK: - Shared Singleton
-    public static let shared = NetworkHelper()
-
-    // MARK: - Private init for singleton
-    private init() {
-        // Initialize with a default configuration
-        self.config = NetworkConfiguration() // Default configuration
-        self.interceptor = RetryAndThrottleInterceptor(
-            retryLimit: config.retryLimit,
-            exponentialBackoffBase: config.exponentialBackoffBase,
-            exponentialBackoffScale: config.exponentialBackoffScale,
-            throttleInterval: config.throttleInterval
-        )
-        self.customSession = NetworkHelper.configureCustomSession(
-            retryPolicy: interceptor,
-            enableSSLPinning: config.enableSSLPinning,
-            pinnedDomains: config.pinnedDomains
-        )
-    }
-
-    // MARK: - Static Configuration Method
-    public static func configure(with configuration: NetworkConfiguration) {
-        let helper = NetworkHelper.shared
-        helper.config = configuration // Reassign the new configuration
-        helper.interceptor = RetryAndThrottleInterceptor(
-            retryLimit: configuration.retryLimit,
-            exponentialBackoffBase: configuration.exponentialBackoffBase,
-            exponentialBackoffScale: configuration.exponentialBackoffScale,
-            throttleInterval: configuration.throttleInterval
-        )
-        helper.customSession = NetworkHelper.configureCustomSession(
-            retryPolicy: helper.interceptor,
-            enableSSLPinning: configuration.enableSSLPinning,
-            pinnedDomains: configuration.pinnedDomains
-        )
-    }
-
-    // MARK: - Configurable Custom Session
-    public static func configureCustomSession(retryPolicy: RequestInterceptor, enableSSLPinning: Bool, pinnedDomains: [String: ServerTrustEvaluating]) -> Session {
-        var serverTrustManager: ServerTrustManager?
-        
-        if enableSSLPinning && !pinnedDomains.isEmpty {
-            serverTrustManager = ServerTrustManager(evaluators: pinnedDomains)
-        }
-        
-        return Session(
-            interceptor: retryPolicy,
-            serverTrustManager: serverTrustManager
-        )
-    }
-}
-
-
-// MARK: - RetryAndThrottleInterceptor (Handles Retry and Throttling)
-public class RetryAndThrottleInterceptor: RequestInterceptor {
-    private let retryLimit: Int
-    private let exponentialBackoffBase: Double
-    private let exponentialBackoffScale: TimeInterval
-    private let throttleInterval: TimeInterval
-    
-    public init(retryLimit: Int, exponentialBackoffBase: Double, exponentialBackoffScale: TimeInterval, throttleInterval: TimeInterval) {
-        self.retryLimit = retryLimit
-        self.exponentialBackoffBase = exponentialBackoffBase
-        self.exponentialBackoffScale = exponentialBackoffScale
-        self.throttleInterval = throttleInterval
-    }
-    
-    public func retry(_ request: Request, for session: Session, dueTo error: Error, completion: @escaping (RetryResult) -> Void) {
-        let retryCount = request.retryCount
-        guard retryCount < retryLimit else {
-            return completion(.doNotRetry)
-        }
-        
-        let backoffDelay = pow(exponentialBackoffBase, Double(retryCount)) * exponentialBackoffScale
-        completion(.retryWithDelay(backoffDelay))
+        self.pinnedDomains = pinnedDomains // User can pass their own pinned domains
     }
 }
 
@@ -197,215 +109,216 @@ public enum NetworkError: Error, Equatable {
     }
 }
 
-// MARK: - NetworkHelper
-public final class NetworkHelper: NetworkHelperProtocol {
-    public var customSession: Session
-    private let config: NetworkConfiguration
-    private let interceptor: RequestInterceptor
 
-    // MARK: - Singleton
-    public static let shared = NetworkHelper()
-
-    // MARK: - Initializer with Config
-    public init(configuration: NetworkConfiguration = NetworkConfiguration()) {
-        self.config = configuration
-        self.interceptor = RetryAndThrottleInterceptor(
-            retryLimit: configuration.retryLimit,
-            exponentialBackoffBase: configuration.exponentialBackoffBase,
-            exponentialBackoffScale: configuration.exponentialBackoffScale,
-            throttleInterval: configuration.throttleInterval
-        )
-        self.customSession = NetworkHelper.configureCustomSession(
-            retryPolicy: interceptor,
-            enableSSLPinning: configuration.enableSSLPinning,
-            pinnedDomains: configuration.pinnedDomains
-        )
-    }
-
-    // MARK: - Configurable Custom Session
-    public static func configureCustomSession(retryPolicy: RequestInterceptor, enableSSLPinning: Bool, pinnedDomains: [String: ServerTrustEvaluating]) -> Session {
-        var serverTrustManager: ServerTrustManager?
-        
-        if enableSSLPinning && !pinnedDomains.isEmpty {
-            serverTrustManager = ServerTrustManager(evaluators: pinnedDomains)
-        }
-        
-        return Session(
-            interceptor: retryPolicy,
-            serverTrustManager: serverTrustManager
-        )
-    }
-
-    // MARK: - Logging
-    private func log(_ message: String) {
-        if config.enableLogging {
-            print("🔍 \(message)")
-        }
-    }
-
-    // MARK: - API Request (Async)
-    public func makeAPIRequestAsync<T: Decodable>(
-        url: String,
-        parameters: [String: Any]?,
-        method: NetworkHelperHttpMethod = .post,
-        headers: HTTPHeaders
-    ) async throws -> T {
-        return try await withCheckedThrowingContinuation { continuation in
-            self.makeAPIRequest(url: url, parameters: parameters, method: method, headers: headers) { (result: Result<T, NetworkError>) in
-                switch result {
-                case .success(let data):
-                    continuation.resume(returning: data)
-                case .failure(let error):
-                    continuation.resume(throwing: error)
-                }
-            }
-        }
-    }
-
-    // MARK: - API Request (Completion-based)
-    public func makeAPIRequest<T: Decodable>(
-        url: String,
-        parameters: [String: Any]?,
-        method: NetworkHelperHttpMethod = .post,
-        headers: HTTPHeaders,
-        completion: @escaping (Result<T, NetworkError>) -> Void
-    ) {
-        guard let validatedHeaders = addAuthorizationIfMissing(headers) else {
-            completion(.failure(.BAD_TOKEN))
-            return
-        }
-        
-        if NetworkReachability.shared.isNotReachable {
-            completion(.failure(.NO_INTERNET_CONNECTION))
-            return
-        }
-        
-        customSession
-            .request(url, method: method.method, parameters: parameters, encoding: JSONEncoding.default, headers: validatedHeaders)
-            .validate(statusCode: 200..<300)
-            .responseDecodable(of: T.self) { response in
-                self.handleResponse(response: response, completion: completion)
-            }
-    }
-
-    // MARK: - Upload API Request (Async)
-    public func makeUploadAPIRequestAsync<T: Decodable>(
-        url: String,
-        parameters: [String: Any]?,
-        fileData: [UploadableData]?,
-        method: NetworkHelperHttpMethod = .post,
-        headers: HTTPHeaders
-    ) async throws -> T {
-        return try await withCheckedThrowingContinuation { continuation in
-            self.makeUploadAPIRequest(url: url, parameters: parameters, fileData: fileData, method: method, headers: headers) { (result: Result<T, NetworkError>) in
-                switch result {
-                case .success(let data):
-                    continuation.resume(returning: data)
-                case .failure(let error):
-                    continuation.resume(throwing: error)
-                }
-            }
-        }
-    }
-
-    // MARK: - Upload API Request (Completion-based)
-    public func makeUploadAPIRequest<T: Decodable>(
-        url: String,
-        parameters: [String: Any]?,
-        fileData: [UploadableData]?,
-        method: NetworkHelperHttpMethod = .post,
-        headers: HTTPHeaders,
-        completion: @escaping (Result<T, NetworkError>) -> Void
-    ) {
-        guard let validatedHeaders = addAuthorizationIfMissing(headers) else {
-            completion(.failure(.BAD_TOKEN))
-            return
-        }
-        
-        if NetworkReachability.shared.isNotReachable {
-            completion(.failure(.NO_INTERNET_CONNECTION))
-            return
-        }
-        
-        guard let fileData = fileData, !fileData.isEmpty else {
-            completion(.failure(.UNHANDLED_ERROR(reason: "No file data provided")))
-            return
-        }
-        
-        customSession.upload(multipartFormData: { multipartFormData in
-            if let parameters = parameters {
-                for (key, value) in parameters {
-                    if let data = "\(value)".data(using: .utf8) {
-                        multipartFormData.append(data, withName: key)
-                    }
-                }
-            }
-            for file in fileData {
-                multipartFormData.append(file.fileData, withName: file.fileDataParamName, fileName: "file.jpg", mimeType: file.mimeType)
-            }
-        }, to: url, method: method.method, headers: validatedHeaders)
-        .validate(statusCode: 200..<300)
-        .responseDecodable(of: T.self) { response in
-            self.handleResponse(response: response, completion: completion)
-        }
-    }
-    
-    // MARK: - Response Handler
-    private func handleResponse<T: Decodable>(
-        response: DataResponse<T, AFError>,
-        completion: @escaping (Result<T, NetworkError>) -> Void
-    ) {
-        if response.error?.isServerTrustEvaluationError == true {
-            completion(.failure(.SSL_PINNING_FAILED))
-            return
-        }
-        
-        switch response.result {
-        case .success(let value):
-            completion(.success(value))
-        case .failure(let error):
-            let networkError = error.asNetworkError()
-            completion(.failure(networkError))
-        }
-    }
-
-    // MARK: - Authorization Check
-    private func addAuthorizationIfMissing(_ headers: HTTPHeaders) -> HTTPHeaders? {
-        var finalHeaders = headers
-        if let authorization = finalHeaders["Authorization"], authorization.starts(with: "Bearer ") {
-            let token = authorization.replacingOccurrences(of: "Bearer ", with: "").trimmingCharacters(in: .whitespaces)
-            if token.isEmpty, let storedToken = UserDefaults.standard.string(forKey: config.tokenStorageKey), !storedToken.isEmpty {
-                finalHeaders["Authorization"] = "Bearer \(storedToken)"
-            }
-        }
-        return finalHeaders
-    }
-}
-
-// MARK: - Retry and Throttle Interceptor
-public class RetryAndThrottleInterceptor: RequestInterceptor {
-    private let retryLimit: Int
-    private let exponentialBackoffBase: Double
-    private let exponentialBackoffScale: TimeInterval
-    private let throttleInterval: TimeInterval
-    
-    public init(retryLimit: Int, exponentialBackoffBase: Double, exponentialBackoffScale: TimeInterval, throttleInterval: TimeInterval) {
-        self.retryLimit = retryLimit
-        self.exponentialBackoffBase = exponentialBackoffBase
-        self.exponentialBackoffScale = exponentialBackoffScale
-        self.throttleInterval = throttleInterval
-    }
-    
-    public func retry(_ request: Request, for session: Session, dueTo error: Error, completion: @escaping (RetryResult) -> Void) {
-        let retryCount = request.retryCount
-        guard retryCount < retryLimit else {
-            return completion(.doNotRetry)
-        }
-        
-        let backoffDelay = pow(exponentialBackoffBase, Double(retryCount)) * exponentialBackoffScale
-        completion(.retryWithDelay(backoffDelay))
-    }
-}
+//// MARK: - NetworkHelper
+//public final class NetworkHelper: NetworkHelperProtocol {
+//    public var customSession: Session
+//    private let config: NetworkConfiguration
+//    private let interceptor: RequestInterceptor
+//
+//    // MARK: - Singleton
+//    public static let shared = NetworkHelper()
+//
+//    // MARK: - Initializer with Config
+//    public init(configuration: NetworkConfiguration = NetworkConfiguration()) {
+//        self.config = configuration
+//        self.interceptor = RetryAndThrottleInterceptor(
+//            retryLimit: configuration.retryLimit,
+//            exponentialBackoffBase: configuration.exponentialBackoffBase,
+//            exponentialBackoffScale: configuration.exponentialBackoffScale,
+//            throttleInterval: configuration.throttleInterval
+//        )
+//        self.customSession = NetworkHelper.configureCustomSession(
+//            retryPolicy: interceptor,
+//            enableSSLPinning: configuration.enableSSLPinning,
+//            pinnedDomains: configuration.pinnedDomains
+//        )
+//    }
+//
+//    // MARK: - Configurable Custom Session
+//    public static func configureCustomSession(retryPolicy: RequestInterceptor, enableSSLPinning: Bool, pinnedDomains: [String: ServerTrustEvaluating]) -> Session {
+//        var serverTrustManager: ServerTrustManager?
+//        
+//        if enableSSLPinning && !pinnedDomains.isEmpty {
+//            serverTrustManager = ServerTrustManager(evaluators: pinnedDomains)
+//        }
+//        
+//        return Session(
+//            interceptor: retryPolicy,
+//            serverTrustManager: serverTrustManager
+//        )
+//    }
+//
+//    // MARK: - Logging
+//    private func log(_ message: String) {
+//        if config.enableLogging {
+//            print("🔍 \(message)")
+//        }
+//    }
+//
+//    // MARK: - API Request (Async)
+//    public func makeAPIRequestAsync<T: Decodable>(
+//        url: String,
+//        parameters: [String: Any]?,
+//        method: NetworkHelperHttpMethod = .post,
+//        headers: HTTPHeaders
+//    ) async throws -> T {
+//        return try await withCheckedThrowingContinuation { continuation in
+//            self.makeAPIRequest(url: url, parameters: parameters, method: method, headers: headers) { (result: Result<T, NetworkError>) in
+//                switch result {
+//                case .success(let data):
+//                    continuation.resume(returning: data)
+//                case .failure(let error):
+//                    continuation.resume(throwing: error)
+//                }
+//            }
+//        }
+//    }
+//
+//    // MARK: - API Request (Completion-based)
+//    public func makeAPIRequest<T: Decodable>(
+//        url: String,
+//        parameters: [String: Any]?,
+//        method: NetworkHelperHttpMethod = .post,
+//        headers: HTTPHeaders,
+//        completion: @escaping (Result<T, NetworkError>) -> Void
+//    ) {
+//        guard let validatedHeaders = addAuthorizationIfMissing(headers) else {
+//            completion(.failure(.BAD_TOKEN))
+//            return
+//        }
+//        
+//        if NetworkReachability.shared.isNotReachable {
+//            completion(.failure(.NO_INTERNET_CONNECTION))
+//            return
+//        }
+//        
+//        customSession
+//            .request(url, method: method.method, parameters: parameters, encoding: JSONEncoding.default, headers: validatedHeaders)
+//            .validate(statusCode: 200..<300)
+//            .responseDecodable(of: T.self) { response in
+//                self.handleResponse(response: response, completion: completion)
+//            }
+//    }
+//
+//    // MARK: - Upload API Request (Async)
+//    public func makeUploadAPIRequestAsync<T: Decodable>(
+//        url: String,
+//        parameters: [String: Any]?,
+//        fileData: [UploadableData]?,
+//        method: NetworkHelperHttpMethod = .post,
+//        headers: HTTPHeaders
+//    ) async throws -> T {
+//        return try await withCheckedThrowingContinuation { continuation in
+//            self.makeUploadAPIRequest(url: url, parameters: parameters, fileData: fileData, method: method, headers: headers) { (result: Result<T, NetworkError>) in
+//                switch result {
+//                case .success(let data):
+//                    continuation.resume(returning: data)
+//                case .failure(let error):
+//                    continuation.resume(throwing: error)
+//                }
+//            }
+//        }
+//    }
+//
+//    // MARK: - Upload API Request (Completion-based)
+//    public func makeUploadAPIRequest<T: Decodable>(
+//        url: String,
+//        parameters: [String: Any]?,
+//        fileData: [UploadableData]?,
+//        method: NetworkHelperHttpMethod = .post,
+//        headers: HTTPHeaders,
+//        completion: @escaping (Result<T, NetworkError>) -> Void
+//    ) {
+//        guard let validatedHeaders = addAuthorizationIfMissing(headers) else {
+//            completion(.failure(.BAD_TOKEN))
+//            return
+//        }
+//        
+//        if NetworkReachability.shared.isNotReachable {
+//            completion(.failure(.NO_INTERNET_CONNECTION))
+//            return
+//        }
+//        
+//        guard let fileData = fileData, !fileData.isEmpty else {
+//            completion(.failure(.UNHANDLED_ERROR(reason: "No file data provided")))
+//            return
+//        }
+//        
+//        customSession.upload(multipartFormData: { multipartFormData in
+//            if let parameters = parameters {
+//                for (key, value) in parameters {
+//                    if let data = "\(value)".data(using: .utf8) {
+//                        multipartFormData.append(data, withName: key)
+//                    }
+//                }
+//            }
+//            for file in fileData {
+//                multipartFormData.append(file.fileData, withName: file.fileDataParamName, fileName: "file.jpg", mimeType: file.mimeType)
+//            }
+//        }, to: url, method: method.method, headers: validatedHeaders)
+//        .validate(statusCode: 200..<300)
+//        .responseDecodable(of: T.self) { response in
+//            self.handleResponse(response: response, completion: completion)
+//        }
+//    }
+//    
+//    // MARK: - Response Handler
+//    private func handleResponse<T: Decodable>(
+//        response: DataResponse<T, AFError>,
+//        completion: @escaping (Result<T, NetworkError>) -> Void
+//    ) {
+//        if response.error?.isServerTrustEvaluationError == true {
+//            completion(.failure(.SSL_PINNING_FAILED))
+//            return
+//        }
+//        
+//        switch response.result {
+//        case .success(let value):
+//            completion(.success(value))
+//        case .failure(let error):
+//            let networkError = error.asNetworkError()
+//            completion(.failure(networkError))
+//        }
+//    }
+//
+//    // MARK: - Authorization Check
+//    private func addAuthorizationIfMissing(_ headers: HTTPHeaders) -> HTTPHeaders? {
+//        var finalHeaders = headers
+//        if let authorization = finalHeaders["Authorization"], authorization.starts(with: "Bearer ") {
+//            let token = authorization.replacingOccurrences(of: "Bearer ", with: "").trimmingCharacters(in: .whitespaces)
+//            if token.isEmpty, let storedToken = UserDefaults.standard.string(forKey: config.tokenStorageKey), !storedToken.isEmpty {
+//                finalHeaders["Authorization"] = "Bearer \(storedToken)"
+//            }
+//        }
+//        return finalHeaders
+//    }
+//}
+//
+//// MARK: - Retry and Throttle Interceptor
+//public class RetryAndThrottleInterceptor: RequestInterceptor {
+//    private let retryLimit: Int
+//    private let exponentialBackoffBase: Double
+//    private let exponentialBackoffScale: TimeInterval
+//    private let throttleInterval: TimeInterval
+//    
+//    public init(retryLimit: Int, exponentialBackoffBase: Double, exponentialBackoffScale: TimeInterval, throttleInterval: TimeInterval) {
+//        self.retryLimit = retryLimit
+//        self.exponentialBackoffBase = exponentialBackoffBase
+//        self.exponentialBackoffScale = exponentialBackoffScale
+//        self.throttleInterval = throttleInterval
+//    }
+//    
+//    public func retry(_ request: Request, for session: Session, dueTo error: Error, completion: @escaping (RetryResult) -> Void) {
+//        let retryCount = request.retryCount
+//        guard retryCount < retryLimit else {
+//            return completion(.doNotRetry)
+//        }
+//        
+//        let backoffDelay = pow(exponentialBackoffBase, Double(retryCount)) * exponentialBackoffScale
+//        completion(.retryWithDelay(backoffDelay))
+//    }
+//}
 
 // MARK: - Extension for AFError
 extension AFError {
@@ -475,7 +388,7 @@ extension Data {
     // Determine MIME type based on file extension
     func mimeType() -> String {
         let fileExtension = self.fileExtension()
-
+        
         switch fileExtension.lowercased() {
         case "jpg", "jpeg": return "image/jpeg"
         case "png": return "image/png"
@@ -496,10 +409,7 @@ extension Data {
 }
 
 
-
-
-
- final public class NetworkReachability: ObservableObject {
+final public class NetworkReachability: ObservableObject {
     
     public  static let shared = NetworkReachability()
     
