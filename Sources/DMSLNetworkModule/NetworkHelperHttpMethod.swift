@@ -8,7 +8,7 @@
 import Foundation
 import Alamofire
 
-public enum NetworkHelperHttpMethod {
+public enum NetworkHttpMethod {
     /// `CONNECT` method.
     case connect
     /// `DELETE` method.
