@@ -46,47 +46,17 @@ public final class StatusHandler {
             }
         }
         // No matching rule found
-        print("[StatusHandler] No rule matched for status code: \(statusCode), URL: \(url)")
+        NetworkLogger.shared.log("[StatusHandler] No rule matched for status code: \(statusCode), URL: \(url)")
     }
+    
+    
+    /// Resets all the rules for clean test states.
+      public func resetRules() {
+          self.rules.removeAll()
+      }
+
+      /// Returns the current count of rules.
+      public var rulesCount: Int {
+          return self.rules.count
+      }
 }
-//
-//// Define your specific rules when NetworkHelper is initialized
-//public func configureStatusHandler() {
-//    let statusStore = NetworkResponseStatusStore.shared
-//    
-//    // Rule for handling token blacklist (403)
-//    StatusHandler.shared.addRule(
-//        StatusHandlerRule(statusCode: 403, urlPattern: "/token/blacklist") { url in
-//            statusStore.updateIsTokenBlacklistedStatus(with: true, apiWhereTokenWasBlacklisted: url)
-//        }
-//    )
-//    
-//    // Rule for handling app version update (426)
-//    StatusHandler.shared.addRule(
-//        StatusHandlerRule(statusCode: 426, urlPattern: "/version/check") { _ in
-//            statusStore.updateIsNewAppVersionAvailableStatus(with: true)
-//        }
-//    )
-//
-//    // Rule for handling service outage (503)
-//    StatusHandler.shared.addRule(
-//        StatusHandlerRule(statusCode: 503, urlPattern: "/service/outage") { _ in
-//            statusStore.updateServiceOutageStatus(reported: true)
-//        }
-//    )
-//
-//    // Rule for resetting service outage status (200 OK on specific URLs)
-//    StatusHandler.shared.addRule(
-//        StatusHandlerRule(statusCode: 200, urlPattern: "v4.0/passenger/geo/configurations") { _ in
-//            statusStore.updateServiceOutageStatus(reported: false)
-//        }
-//    )
-//
-//    StatusHandler.shared.addRule(
-//        StatusHandlerRule(statusCode: 200, urlPattern: "v3.0/upfront/price") { _ in
-//            statusStore.dissableBookNowAndBookLator = false
-//        }
-//    )
-//    
-//    // Add more rules as needed...
-//}

@@ -25,20 +25,20 @@ struct CommonError: Codable {
     }
 }
 
-enum ErrorsContainer: Codable {
-    case dictionary(UnifiedError)  // Now using UnifiedError
-    case array([UnifiedError])     // Array of UnifiedError
+public enum ErrorsContainer: Codable {
+    case dictionary(ErrorsV2)
+    case array([ErrorV3])
     case none
 
     // Custom decoding to support both array and dictionary
     public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
-        // First try decoding as UnifiedError (dictionary)
-        if let dictionary = try? container.decode(UnifiedError.self) {
+        // First try decoding as ErrorsV2 (dictionary)
+        if let dictionary = try? container.decode(ErrorsV2.self) {
             self = .dictionary(dictionary)
         }
-        // Then try decoding as an array of UnifiedError
-        else if let array = try? container.decode([UnifiedError].self) {
+        // Then try decoding as an array of ErrorV3
+        else if let array = try? container.decode([ErrorV3].self) {
             self = .array(array)
         } else {
             // If both decoding attempts fail, set it to .none
@@ -60,25 +60,10 @@ enum ErrorsContainer: Codable {
     }
 }
 
-struct UnifiedError: Codable {
+public struct ErrorV3: Codable {
     let code: String?
-    let correlationID: String?
-    let developerMessage: String?
-    let message: String?
-
-    // Unified initializer
-    public init(
-        code: String? = nil,
-        correlationID: String? = nil,
-        developerMessage: String? = nil,
-        message: String? = nil
-    ) {
-        self.code = code
-        self.correlationID = correlationID
-        self.developerMessage = developerMessage
-        self.message = message
-    }
-
+    let correlationID, developerMessage, message: String?
+    
     enum CodingKeys: String, CodingKey {
         case code
         case correlationID = "correlationId"
@@ -86,6 +71,18 @@ struct UnifiedError: Codable {
     }
 }
 
-struct Fields: Codable {
+public struct Fields: Codable {
     public var number: String?
 }
+
+public struct ErrorsV2: Codable {
+    
+    public init(code: Int? = nil, message: String? = nil) {
+        self.code = code
+        self.message = message
+    }
+    
+    public var code: Int?
+    public var message: String?
+}
+

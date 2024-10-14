@@ -175,7 +175,6 @@ public final class NetworkHelper {
             return
         }
         
-        
         guard let statusCode = response.response?.statusCode else {
             completion(.failure(.GENERAL_NETWORK_ERROR)) // Handle missing status code
             return
@@ -195,9 +194,7 @@ public final class NetworkHelper {
             switch statusCode {
             case 400:
                 handleDecodedError(from: response.data, statusCode: statusCode, afError: afError, completion: completion)
-            case 401:
-                completion(.failure(.UNAUTHENTICATED))
-            case 403:
+            case 401, 403:
                 completion(.failure(.UNAUTHENTICATED))
             case 404:
                 completion(.failure(.NETWORK_RESOURCE_NOT_FOUND))
@@ -219,7 +216,7 @@ public final class NetworkHelper {
 
 extension NetworkHelper {
     // MARK: - Authorization Check
-    private func addAuthorizationIfMissing(_ headers: HTTPHeaders) -> HTTPHeaders? {
+     func addAuthorizationIfMissing(_ headers: HTTPHeaders) -> HTTPHeaders? {
         var finalHeaders = headers
         if let authorization = finalHeaders["Authorization"], authorization.starts(with: "Bearer ") {
             let token = authorization.replacingOccurrences(of: "Bearer ", with: "").trimmingCharacters(in: .whitespaces)
@@ -241,7 +238,7 @@ extension NetworkHelper {
         completion: @escaping (Result<T, NetworkError>) -> Void
     ) {
         // Check if we can decode the error message
-        if let decodedError = decodeError(data: data) {
+        if let decodedError = decodeError(value: data) {
             var errorMessage: String?
             
             switch decodedError.errors {
@@ -259,6 +256,11 @@ extension NetworkHelper {
             // Use the error message extracted from the decoded error
             completion(.failure(.UNHANDLED_ERROR(reason: errorMessage ?? "400 Error")))
         } else {
+           //add this if some time backkend error not comming correclty
+            if statusCode == 500{
+                completion(.failure(.SERVER_SIDE_ERROR))
+                return
+            }
             // Fallback to NetworkError if no decoded error
             let networkError = afError.asNetworkError()
             completion(.failure(networkError))
@@ -267,8 +269,8 @@ extension NetworkHelper {
 }
 
 extension NetworkHelper {
-    func decodeError(data: Data?) -> CommonError? {
-        guard let data = data else {
+    func decodeError(value: Data?) -> CommonError? {
+        guard let data = value else {
             // Log the error using NetworkLogger for nil data
             NetworkLogger.shared.log("[🔴 ERROR] API RESPONSE: Provided value is nil")
             return nil
