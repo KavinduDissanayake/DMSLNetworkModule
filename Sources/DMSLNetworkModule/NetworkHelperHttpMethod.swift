@@ -29,7 +29,9 @@ public enum NetworkHttpMethod {
     case query
     /// `TRACE` method.
     case trace
-    
+}
+
+extension NetworkHttpMethod{
     public var method: HTTPMethod {
         let httpMethod: HTTPMethod
         switch self {

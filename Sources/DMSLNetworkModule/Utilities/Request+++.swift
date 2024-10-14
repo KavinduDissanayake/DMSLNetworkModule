@@ -8,6 +8,7 @@
 import Alamofire
 
 // MARK: - DataRequest Debug Logger
+// MARK: - DataRequest Debug Logger
 extension Alamofire.DataRequest {
 
     public func debugLog(using config: NetworkConfiguration, parameters: [String: Any]? = nil) -> Self {
@@ -48,6 +49,15 @@ extension Alamofire.DataRequest {
                 NetworkLogger.shared.log("Response URL: \(url)")
                 NetworkLogger.shared.log("HTTP Status Code: \(statusCode)")
                 NetworkLogger.shared.log("HTTP Response: \(httpResponse)")
+                
+                // Use NetworkLogger to log request details (URL, Method, Headers, Body)
+                NetworkLogger.shared.logResponse(
+                    url: url, statusCode: statusCode,
+                    headers:  response.request?.allHTTPHeaderFields as [String: String]?,
+                    response: httpResponse
+                )
+                
+                
             } else {
                 NetworkLogger.shared.log("No HTTP response received.")
             }
