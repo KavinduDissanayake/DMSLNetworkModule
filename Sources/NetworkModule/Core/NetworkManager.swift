@@ -89,7 +89,22 @@ public final class NetworkManager {
             ) { (result: Result<T, NetworkError>, responseHeaders) in
                 switch result {
                 case .success(let data):
-                    continuation.resume(returning: data)
+                    if includeHeaders {
+                                       // If `T` is expected to be `APIResponse`, wrap the data and headers
+                                       if let apiResponseType = T.self as? APIResponse<T>.Type {
+                                           let apiResponse = APIResponse(data: data, headers: responseHeaders)
+                                           if let wrappedResponse = apiResponse as? T {
+                                               continuation.resume(returning: wrappedResponse)
+                                           } else {
+                                               continuation.resume(throwing: NetworkError.UNHANDLED_ERROR(reason: "Type mismatch: Unable to wrap data in APIResponse."))
+                                           }
+                                       } else {
+                                           continuation.resume(throwing: NetworkError.UNHANDLED_ERROR(reason: "Type mismatch: Expected APIResponse<T>, but got \(T.self)."))
+                                       }
+                                   } else {
+                                       // If headers are not included, return just the data
+                                       continuation.resume(returning: data)
+                                   }
                 case .failure(let error):
                     continuation.resume(throwing: error)
                 }
