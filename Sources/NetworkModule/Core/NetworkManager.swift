@@ -89,11 +89,22 @@ public final class NetworkManager {
             ) { (result: Result<T, NetworkError>, responseHeaders) in
                 switch result {
                 case .success(let data):
-                    if includeHeaders, let apiResponse = T.self as? APIResponse<T>.Type {
-                        continuation.resume(returning: apiResponse.init(data: data, headers: responseHeaders) as! T)
-                    } else if includeHeaders {
-                        continuation.resume(throwing: NetworkError.UNHANDLED_ERROR(reason: "Type mismatch: Expected APIResponse<T>"))
+                    if includeHeaders {
+                        // Check if T is an APIResponse type
+                        if let apiResponseType = T.self as? APIResponse<T>.Type {
+                            // Safely initialize APIResponse with data and headers
+                            if let apiResponse = apiResponseType.init(data: data, headers: responseHeaders) as? T {
+                                continuation.resume(returning: apiResponse)
+                            } else {
+                                // Handle type mismatch
+                                continuation.resume(throwing: NetworkError.UNHANDLED_ERROR(reason: "Failed to create APIResponse with the provided data and headers."))
+                            }
+                        } else {
+                            // Handle the case where T is not APIResponse
+                            continuation.resume(throwing: NetworkError.UNHANDLED_ERROR(reason: "Type mismatch: Expected APIResponse<T>, but received a different type."))
+                        }
                     } else {
+                        // Directly return the decoded data if headers are not needed
                         continuation.resume(returning: data)
                     }
                 case .failure(let error):
@@ -157,11 +168,22 @@ public final class NetworkManager {
             ) { (result: Result<T, NetworkError>, responseHeaders) in
                 switch result {
                 case .success(let data):
-                    if includeHeaders, let apiResponse = T.self as? APIResponse<T>.Type {
-                        continuation.resume(returning: apiResponse.init(data: data, headers: responseHeaders) as! T)
-                    } else if includeHeaders {
-                        continuation.resume(throwing: NetworkError.UNHANDLED_ERROR(reason: "Type mismatch: Expected APIResponse<T>"))
+                    if includeHeaders {
+                        // Check if T is an APIResponse type
+                        if let apiResponseType = T.self as? APIResponse<T>.Type {
+                            // Safely initialize APIResponse with data and headers
+                            if let apiResponse = apiResponseType.init(data: data, headers: responseHeaders) as? T {
+                                continuation.resume(returning: apiResponse)
+                            } else {
+                                // Handle type mismatch
+                                continuation.resume(throwing: NetworkError.UNHANDLED_ERROR(reason: "Failed to create APIResponse with the provided data and headers."))
+                            }
+                        } else {
+                            // Handle the case where T is not APIResponse
+                            continuation.resume(throwing: NetworkError.UNHANDLED_ERROR(reason: "Type mismatch: Expected APIResponse<T>, but received a different type."))
+                        }
                     } else {
+                        // Directly return the decoded data if headers are not needed
                         continuation.resume(returning: data)
                     }
                 case .failure(let error):
