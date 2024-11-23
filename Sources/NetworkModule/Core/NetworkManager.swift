@@ -8,6 +8,23 @@
 import SwiftUI
 import Alamofire
 import LoggerModule
+
+public struct APIResponse<T: Decodable>: Decodable {
+    public let data: T
+    public let headers: [AnyHashable: Any]?
+
+    public init(data: T, headers: [AnyHashable: Any]?) {
+        self.data = data
+        self.headers = headers
+    }
+
+    // Decode only `data`, exclude `headers`
+    public init(from decoder: Decoder) throws {
+        self.data = try T(from: decoder)
+        self.headers = nil // Headers are set manually at runtime
+    }
+}
+
 //// MARK: - NetworkManager
 public final class NetworkManager {
     
@@ -59,13 +76,30 @@ public final class NetworkManager {
         parameters: [String: Any]?,
         method: NetworkHttpMethod = .post,
         headers: HTTPHeaders,
-        encoding: ParameterEncoding? = nil
-    ) async throws -> (T, [AnyHashable: Any]?) { // Return both data and headers
+        encoding: ParameterEncoding? = nil,
+        includeHeaders: Bool = false // Add a flag to control header inclusion
+    ) async throws -> T { // Return only data by default
         return try await withCheckedThrowingContinuation { continuation in
-            self.makeAPIRequest(url: url, parameters: parameters, method: method, headers: headers, encoding: encoding) { (result: Result<T, NetworkError>, headers) in
+            self.makeAPIRequest(
+                url: url,
+                parameters: parameters,
+                method: method,
+                headers: headers,
+                encoding: encoding
+            ) { (result: Result<T, NetworkError>, responseHeaders) in
                 switch result {
                 case .success(let data):
-                    continuation.resume(returning: (data, headers))
+                    if includeHeaders {
+                        // Wrap data and headers in a container object
+                        if includeHeaders, let apiResponse = T.self as? APIResponse<T>.Type {
+                            continuation.resume(returning: apiResponse.init(data: data, headers: responseHeaders) as! T)
+                        } else if includeHeaders {
+                            continuation.resume(throwing: NetworkError.UNHANDLED_ERROR(reason: "Type mismatch: Expected APIResponse<T>"))
+                        } else {
+                            continuation.resume(returning: data)
+                        }                    } else {
+                          continuation.resume(returning: data)
+                        }
                 case .failure(let error):
                     continuation.resume(throwing: error)
                 }
@@ -112,8 +146,9 @@ public final class NetworkManager {
         method: NetworkHttpMethod = .post,
         headers: HTTPHeaders,
         encoding: ParameterEncoding? = nil,
-        progressHandler: ((Double) -> Void)? = nil // Added progress handler
-    ) async throws -> (T, [AnyHashable: Any]?) { // Return both data and headers
+        progressHandler: ((Double) -> Void)? = nil,
+        includeHeaders: Bool = false // Add flag to include headers
+    ) async throws -> T { // Return only data by default
         return try await withCheckedThrowingContinuation { continuation in
             self.makeUploadAPIRequest(
                 url: url,
@@ -123,10 +158,17 @@ public final class NetworkManager {
                 headers: headers,
                 encoding: encoding,
                 progressHandler: progressHandler
-            ) { (result: Result<T, NetworkError>, headers) in
+            ) { (result: Result<T, NetworkError>, responseHeaders) in
                 switch result {
                 case .success(let data):
-                    continuation.resume(returning: (data, headers)) // Return both data and headers
+                    // Wrap data and headers in a container object
+                    if includeHeaders, let apiResponse = T.self as? APIResponse<T>.Type {
+                        continuation.resume(returning: apiResponse.init(data: data, headers: responseHeaders) as! T)
+                    } else if includeHeaders {
+                        continuation.resume(throwing: NetworkError.UNHANDLED_ERROR(reason: "Type mismatch: Expected APIResponse<T>"))
+                    } else {
+                        continuation.resume(returning: data)
+                    }     
                 case .failure(let error):
                     continuation.resume(throwing: error)
                 }
@@ -159,7 +201,7 @@ public final class NetworkManager {
             completion(.failure(.UNHANDLED_ERROR(reason: "No file data provided")),nil)
             return
         }
-
+        
         customSession.upload(multipartFormData: { multipartFormData in
             if let parameters = parameters {
                 for (key, value) in parameters {
@@ -235,7 +277,7 @@ public final class NetworkManager {
 
 extension NetworkManager {
     // MARK: - Authorization Check
-     func addAuthorizationIfMissing(_ headers: HTTPHeaders) -> HTTPHeaders? {
+    func addAuthorizationIfMissing(_ headers: HTTPHeaders) -> HTTPHeaders? {
         var finalHeaders = headers
         if let authorization = finalHeaders["Authorization"], authorization.starts(with: "Bearer ") {
             let token = authorization.replacingOccurrences(of: "Bearer ", with: "").trimmingCharacters(in: .whitespaces)
@@ -269,11 +311,11 @@ extension NetworkManager {
             case nil, .some(.none):
                 errorMessage = "oops_text"
             }
-
+            
             // Use the error message extracted from the decoded error
             completion(.failure(.UNHANDLED_ERROR(reason: errorMessage ?? "oops_text")), nil)
         } else {
-           //add this if some time backkend error not comming correclty
+            //add this if some time backkend error not comming correclty
             if statusCode == 500{
                 completion(.failure(.SERVER_SIDE_ERROR), nil)
                 return
