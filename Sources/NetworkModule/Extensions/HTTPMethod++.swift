@@ -1,14 +1,13 @@
 //
-//  NetworkHelperHttpMethod.swift
+//  HTTPMethod++.swift
 //  DMSLNetworkModule
 //
-//  Created by Kavindu Dissanayake on 2024-10-11.
+//  Created by Kavindu Dissanayake on 2024-10-12.
 //
-
 import Foundation
 import Alamofire
 
-public enum NetworkHelperHttpMethod {
+public enum NetworkHttpMethod {
     /// `CONNECT` method.
     case connect
     /// `DELETE` method.
@@ -29,7 +28,9 @@ public enum NetworkHelperHttpMethod {
     case query
     /// `TRACE` method.
     case trace
-    
+}
+
+extension NetworkHttpMethod{
     public var method: HTTPMethod {
         let httpMethod: HTTPMethod
         switch self {
