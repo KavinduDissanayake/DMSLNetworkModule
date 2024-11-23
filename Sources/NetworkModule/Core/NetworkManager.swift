@@ -90,21 +90,32 @@ public final class NetworkManager {
                 switch result {
                 case .success(let data):
                     if includeHeaders {
-                        // Safely check if T is APIResponse<U>
-                        if let apiResponseType = T.self as? APIResponse<T>.Type {
-                            let apiResponse = APIResponse(data: data, headers: responseHeaders)
-                            continuation.resume(returning: apiResponse as! T)
-                        } else {
-                            continuation.resume(throwing: NetworkError.UNHANDLED_ERROR(reason: "Type mismatch: Expected APIResponse<T>."))
-                        }
-                    } else {
-                        continuation.resume(returning: data)
-                    }
+                                       // Dynamically check if T is APIResponse<U>
+                                       if let apiResponse = self.wrapDataAndHeadersIfNeeded(data: data, headers: responseHeaders) as? T {
+                                           continuation.resume(returning: apiResponse)
+                                       } else {
+                                           continuation.resume(throwing: NetworkError.UNHANDLED_ERROR(reason: "Type mismatch: Expected APIResponse<T>, got \(T.self)."))
+                                       }
+                                   } else {
+                                       continuation.resume(returning: data)
+                                   }
                 case .failure(let error):
                     continuation.resume(throwing: error)
                 }
             }
         }
+    }
+    
+    // Helper function to dynamically wrap data and headers
+    private func wrapDataAndHeadersIfNeeded<T: Decodable>(
+        data: T,
+        headers: [AnyHashable: Any]?
+    ) -> Any? {
+        // Check if T is APIResponse<U>
+        if let type = T.self as? APIResponse<T>.Type {
+            return type.init(data: data, headers: headers)
+        }
+        return nil // Return nil if T is not APIResponse<U>
     }
     // MARK: - API Request (Completion-based)
     public func makeAPIRequest<T: Decodable>(
