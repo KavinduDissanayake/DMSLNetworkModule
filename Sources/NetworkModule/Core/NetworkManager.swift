@@ -12,16 +12,23 @@ import LoggerModule
 public struct APIResponse<T: Decodable>: Decodable {
     public let data: T
     public let headers: [AnyHashable: Any]?
-    
+
+    // Custom initializer to include headers after decoding
     public init(data: T, headers: [AnyHashable: Any]?) {
         self.data = data
         self.headers = headers
     }
-    
-    // Decode only `data`, exclude `headers`
+
+    // Coding keys for `Decodable` conformance (exclude `headers`)
+    private enum CodingKeys: String, CodingKey {
+        case data
+    }
+
+    // Decoder that only decodes `data`
     public init(from decoder: Decoder) throws {
-        self.data = try T(from: decoder)
-        self.headers = nil // Headers are set manually at runtime
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.data = try container.decode(T.self, forKey: .data)
+        self.headers = nil // Headers must be set manually
     }
 }
 
@@ -111,11 +118,12 @@ public final class NetworkManager {
         data: T,
         headers: [AnyHashable: Any]?
     ) -> Any? {
-        // Check if T is APIResponse<U>
-        if let type = T.self as? APIResponse<T>.Type {
-            return type.init(data: data, headers: headers)
+        // Dynamically check if T is APIResponse<U> for some Decodable U
+        if let apiResponseType = T.self as? APIResponse<T>.Type {
+            return apiResponseType.init(data: data, headers: headers)
         }
-        return nil // Return nil if T is not APIResponse<U>
+
+        return nil // If not APIResponse<U>, return nil
     }
     // MARK: - API Request (Completion-based)
     public func makeAPIRequest<T: Decodable>(
