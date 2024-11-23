@@ -12,12 +12,12 @@ import LoggerModule
 public struct APIResponse<T: Decodable>: Decodable {
     public let data: T
     public let headers: [AnyHashable: Any]?
-
+    
     public init(data: T, headers: [AnyHashable: Any]?) {
         self.data = data
         self.headers = headers
     }
-
+    
     // Decode only `data`, exclude `headers`
     public init(from decoder: Decoder) throws {
         self.data = try T(from: decoder)
@@ -89,17 +89,13 @@ public final class NetworkManager {
             ) { (result: Result<T, NetworkError>, responseHeaders) in
                 switch result {
                 case .success(let data):
-                    if includeHeaders {
-                        // Wrap data and headers in a container object
-                        if includeHeaders, let apiResponse = T.self as? APIResponse<T>.Type {
-                            continuation.resume(returning: apiResponse.init(data: data, headers: responseHeaders) as! T)
-                        } else if includeHeaders {
-                            continuation.resume(throwing: NetworkError.UNHANDLED_ERROR(reason: "Type mismatch: Expected APIResponse<T>"))
-                        } else {
-                            continuation.resume(returning: data)
-                        }                    } else {
-                          continuation.resume(returning: data)
-                        }
+                    if includeHeaders, let apiResponse = T.self as? APIResponse<T>.Type {
+                        continuation.resume(returning: apiResponse.init(data: data, headers: responseHeaders) as! T)
+                    } else if includeHeaders {
+                        continuation.resume(throwing: NetworkError.UNHANDLED_ERROR(reason: "Type mismatch: Expected APIResponse<T>"))
+                    } else {
+                        continuation.resume(returning: data)
+                    }
                 case .failure(let error):
                     continuation.resume(throwing: error)
                 }
@@ -161,14 +157,13 @@ public final class NetworkManager {
             ) { (result: Result<T, NetworkError>, responseHeaders) in
                 switch result {
                 case .success(let data):
-                    // Wrap data and headers in a container object
                     if includeHeaders, let apiResponse = T.self as? APIResponse<T>.Type {
                         continuation.resume(returning: apiResponse.init(data: data, headers: responseHeaders) as! T)
                     } else if includeHeaders {
                         continuation.resume(throwing: NetworkError.UNHANDLED_ERROR(reason: "Type mismatch: Expected APIResponse<T>"))
                     } else {
                         continuation.resume(returning: data)
-                    }     
+                    }
                 case .failure(let error):
                     continuation.resume(throwing: error)
                 }
