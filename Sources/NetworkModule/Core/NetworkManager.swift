@@ -77,8 +77,8 @@ public final class NetworkManager {
         method: NetworkHttpMethod = .post,
         headers: HTTPHeaders,
         encoding: ParameterEncoding? = nil,
-        includeHeaders: Bool = false // Add a flag to control header inclusion
-    ) async throws -> T { // Return only data by default
+        includeHeaders: Bool = false
+    ) async throws -> T {
         return try await withCheckedThrowingContinuation { continuation in
             self.makeAPIRequest(
                 url: url,
@@ -90,28 +90,22 @@ public final class NetworkManager {
                 switch result {
                 case .success(let data):
                     if includeHeaders {
-                                       // If `T` is expected to be `APIResponse`, wrap the data and headers
-                                       if let apiResponseType = T.self as? APIResponse<T>.Type {
-                                           let apiResponse = APIResponse(data: data, headers: responseHeaders)
-                                           if let wrappedResponse = apiResponse as? T {
-                                               continuation.resume(returning: wrappedResponse)
-                                           } else {
-                                               continuation.resume(throwing: NetworkError.UNHANDLED_ERROR(reason: "Type mismatch: Unable to wrap data in APIResponse."))
-                                           }
-                                       } else {
-                                           continuation.resume(throwing: NetworkError.UNHANDLED_ERROR(reason: "Type mismatch: Expected APIResponse<T>, but got \(T.self)."))
-                                       }
-                                   } else {
-                                       // If headers are not included, return just the data
-                                       continuation.resume(returning: data)
-                                   }
+                        // Safely check if T is APIResponse<U>
+                        if let apiResponseType = T.self as? APIResponse<T>.Type {
+                            let apiResponse = APIResponse(data: data, headers: responseHeaders)
+                            continuation.resume(returning: apiResponse as! T)
+                        } else {
+                            continuation.resume(throwing: NetworkError.UNHANDLED_ERROR(reason: "Type mismatch: Expected APIResponse<T>."))
+                        }
+                    } else {
+                        continuation.resume(returning: data)
+                    }
                 case .failure(let error):
                     continuation.resume(throwing: error)
                 }
             }
         }
     }
-    
     // MARK: - API Request (Completion-based)
     public func makeAPIRequest<T: Decodable>(
         url: String,
