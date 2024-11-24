@@ -8,30 +8,6 @@
 import SwiftUI
 import Alamofire
 import LoggerModule
-
-public struct APIResponse<T: Decodable>: Decodable {
-    public let data: T
-    public let headers: [AnyHashable: Any]?
-
-    // Custom initializer to include headers after decoding
-    public init(data: T, headers: [AnyHashable: Any]?) {
-        self.data = data
-        self.headers = headers
-    }
-
-    // Coding keys for `Decodable` conformance (exclude `headers`)
-    private enum CodingKeys: String, CodingKey {
-        case data
-    }
-
-    // Decoder that only decodes `data`
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.data = try container.decode(T.self, forKey: .data)
-        self.headers = nil // Headers must be set manually
-    }
-}
-
 //// MARK: - NetworkManager
 public final class NetworkManager {
     
@@ -65,118 +41,29 @@ public final class NetworkManager {
     
     // MARK: - Configurable Custom Session
     public static func configureCustomSession(retryPolicy: RequestInterceptor, enableSSLPinning: Bool, pinnedDomains: [String: ServerTrustEvaluating]) -> Session {
-        var serverTrustManager: ServerTrustManager?
-        
+        var serverTrustManager: ServerTrustManager?        
         if enableSSLPinning && !pinnedDomains.isEmpty {
             serverTrustManager = ServerTrustManager(evaluators: pinnedDomains)
         }
-        
         return Session(
             interceptor: retryPolicy,
             serverTrustManager: serverTrustManager
         )
     }
-    
-    // MARK: - API Request (Async)
+}
+
+// MARK: - API Request (Async)
+extension NetworkManager {
+    // MARK: - Basic Async API Request
     public func makeAPIRequestAsync<T: Decodable>(
         url: String,
         parameters: [String: Any]?,
         method: NetworkHttpMethod = .post,
         headers: HTTPHeaders,
-        encoding: ParameterEncoding? = nil,
-        includeHeaders: Bool = false
+        encoding: ParameterEncoding? = nil
     ) async throws -> T {
         return try await withCheckedThrowingContinuation { continuation in
-            self.makeAPIRequest(
-                url: url,
-                parameters: parameters,
-                method: method,
-                headers: headers,
-                encoding: encoding
-            ) { (result: Result<T, NetworkError>, responseHeaders) in
-                switch result {
-                case .success(let data):
-                    if includeHeaders {
-                                       // Dynamically check if T is APIResponse<U>
-                                       if let apiResponse = self.wrapDataAndHeadersIfNeeded(data: data, headers: responseHeaders) as? T {
-                                           continuation.resume(returning: apiResponse)
-                                       } else {
-                                           continuation.resume(throwing: NetworkError.UNHANDLED_ERROR(reason: "Type mismatch: Expected APIResponse<T>, got \(T.self)."))
-                                       }
-                                   } else {
-                                       continuation.resume(returning: data)
-                                   }
-                case .failure(let error):
-                    continuation.resume(throwing: error)
-                }
-            }
-        }
-    }
-    
-    // Helper function to dynamically wrap data and headers
-    private func wrapDataAndHeadersIfNeeded<T: Decodable>(
-        data: T,
-        headers: [AnyHashable: Any]?
-    ) -> Any? {
-        // Dynamically check if T is APIResponse<U> for some Decodable U
-        if let apiResponseType = T.self as? APIResponse<T>.Type {
-            return apiResponseType.init(data: data, headers: headers)
-        }
-
-        return nil // If not APIResponse<U>, return nil
-    }
-    // MARK: - API Request (Completion-based)
-    public func makeAPIRequest<T: Decodable>(
-        url: String,
-        parameters: [String: Any]?,
-        method: NetworkHttpMethod = .post,
-        headers: HTTPHeaders,
-        encoding: ParameterEncoding? = nil,
-        completion: @escaping (Result<T, NetworkError>, [AnyHashable: Any]?) -> Void
-    ) {
-        guard let validatedHeaders = addAuthorizationIfMissing(headers) else {
-            completion(.failure(.BAD_TOKEN),nil)
-            return
-        }
-        
-        if NetworkReachability.shared.isNotReachable {
-            completion(.failure(.NO_INTERNET_CONNECTION),nil)
-            return
-        }
-        
-        // Determine encoding using the configuration
-        let requestEncoding = encoding ?? config.determineEncoding(for: method)
-        
-        customSession
-            .request(url, method: method.method, parameters: parameters, encoding: requestEncoding , headers: validatedHeaders)
-            .validate(statusCode: 200..<300)
-            .debugLog(using: config)
-            .responseDecodable(of: T.self) { response in
-                self.handleResponse(response: response, url: url, completion: completion)
-            }
-    }
-    
-    // MARK: - Upload API Request (Async)
-    public func makeUploadAPIRequestAsync<T: Decodable>(
-        url: String,
-        parameters: [String: Any]?,
-        fileData: [UploadableData]?,
-        method: NetworkHttpMethod = .post,
-        headers: HTTPHeaders,
-        encoding: ParameterEncoding? = nil,
-        progressHandler: ((Double) -> Void)? = nil,
-        includeHeaders: Bool = false // Add flag to include headers
-    ) async throws -> T { // Return only data by default
-        return try await withCheckedThrowingContinuation { continuation in
-            self.makeUploadAPIRequest(
-                url: url,
-                parameters: parameters,
-                fileData: fileData,
-                method: method,
-                headers: headers,
-                encoding: encoding,
-                progressHandler: progressHandler
-            ) { (result: Result<T, NetworkError>, responseHeaders) in
+            self.makeAPIRequest(url: url, parameters: parameters, method: method, headers: headers, encoding: encoding) { (result: Result<T, NetworkError>, _) in
                 switch result {
                 case .success(let data):
                     continuation.resume(returning: data)
@@ -187,7 +74,124 @@ public final class NetworkManager {
         }
     }
     
-    // MARK: - Upload API Request (Completion-based)
+    // MARK: - Async API Request with Headers
+    public func makeAPIRequestAsync<T: Decodable>(
+        url: String,
+        parameters: [String: Any]?,
+        method: NetworkHttpMethod = .post,
+        headers: HTTPHeaders,
+        encoding: ParameterEncoding? = nil
+    ) async throws -> (T, [AnyHashable: Any]?) {
+        return try await withCheckedThrowingContinuation { continuation in
+            self.makeAPIRequest(url: url, parameters: parameters, method: method, headers: headers, encoding: encoding) { (result: Result<T, NetworkError>, headers) in
+                switch result {
+                case .success(let data):
+                    continuation.resume(returning: (data, headers))
+                case .failure(let error):
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - API Request (Completion-Based)
+extension NetworkManager {
+    public func makeAPIRequest<T: Decodable>(
+        url: String,
+        parameters: [String: Any]?,
+        method: NetworkHttpMethod = .post,
+        headers: HTTPHeaders,
+        encoding: ParameterEncoding? = nil,
+        completion: @escaping (Result<T, NetworkError>, [AnyHashable: Any]?) -> Void
+    ) {
+        guard let validatedHeaders = addAuthorizationIfMissing(headers) else {
+            completion(.failure(.BAD_TOKEN), nil)
+            return
+        }
+        
+        if NetworkReachability.shared.isNotReachable {
+            completion(.failure(.NO_INTERNET_CONNECTION), nil)
+            return
+        }
+        
+        let requestEncoding = encoding ?? config.determineEncoding(for: method)
+        
+        customSession
+            .request(url, method: method.method, parameters: parameters, encoding: requestEncoding, headers: validatedHeaders)
+            .validate(statusCode: 200..<300)
+            .debugLog(using: config)
+            .responseDecodable(of: T.self) { response in
+                self.handleResponse(response: response, url: url, completion: completion)
+            }
+    }
+}
+
+// MARK: - Upload API Request (Async)
+extension NetworkManager {
+    // MARK: - Basic Async Upload
+    public func makeUploadAPIRequestAsync<T: Decodable>(
+        url: String,
+        parameters: [String: Any]?,
+        fileData: [UploadableData]?,
+        method: NetworkHttpMethod = .post,
+        headers: HTTPHeaders,
+        encoding: ParameterEncoding? = nil,
+        progressHandler: ((Double) -> Void)? = nil
+    ) async throws -> T {
+        return try await withCheckedThrowingContinuation { continuation in
+            self.makeUploadAPIRequest(
+                url: url,
+                parameters: parameters,
+                fileData: fileData,
+                method: method,
+                headers: headers,
+                encoding: encoding,
+                progressHandler: progressHandler
+            ) { (result: Result<T, NetworkError>, _) in
+                switch result {
+                case .success(let data):
+                    continuation.resume(returning: data)
+                case .failure(let error):
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+    
+    // MARK: - Async Upload with Headers
+    public func makeUploadAPIRequestAsync<T: Decodable>(
+        url: String,
+        parameters: [String: Any]?,
+        fileData: [UploadableData]?,
+        method: NetworkHttpMethod = .post,
+        headers: HTTPHeaders,
+        encoding: ParameterEncoding? = nil,
+        progressHandler: ((Double) -> Void)? = nil
+    ) async throws -> (T, [AnyHashable: Any]?) {
+        return try await withCheckedThrowingContinuation { continuation in
+            self.makeUploadAPIRequest(
+                url: url,
+                parameters: parameters,
+                fileData: fileData,
+                method: method,
+                headers: headers,
+                encoding: encoding,
+                progressHandler: progressHandler
+            ) { (result: Result<T, NetworkError>, headers) in
+                switch result {
+                case .success(let data):
+                    continuation.resume(returning: (data, headers))
+                case .failure(let error):
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Upload API Request (Completion-Based)
+extension NetworkManager {
     public func makeUploadAPIRequest<T: Decodable>(
         url: String,
         parameters: [String: Any]?,
@@ -199,17 +203,17 @@ public final class NetworkManager {
         completion: @escaping (Result<T, NetworkError>, [AnyHashable: Any]?) -> Void
     ) {
         guard let validatedHeaders = addAuthorizationIfMissing(headers) else {
-            completion(.failure(.BAD_TOKEN),nil)
+            completion(.failure(.BAD_TOKEN), nil)
             return
         }
         
         if NetworkReachability.shared.isNotReachable {
-            completion(.failure(.NO_INTERNET_CONNECTION),nil)
+            completion(.failure(.NO_INTERNET_CONNECTION), nil)
             return
         }
         
         guard let fileData = fileData, !fileData.isEmpty else {
-            completion(.failure(.UNHANDLED_ERROR(reason: "No file data provided")),nil)
+            completion(.failure(.UNHANDLED_ERROR(reason: "No file data provided")), nil)
             return
         }
         
@@ -232,8 +236,84 @@ public final class NetworkManager {
             self.handleResponse(response: response, url: url, completion: completion)
         }
     }
-    
-    // MARK: - Response Handler
+}
+
+
+// MARK: - Authorization Check
+extension NetworkManager {
+     func addAuthorizationIfMissing(_ headers: HTTPHeaders) -> HTTPHeaders? {
+        var finalHeaders = headers
+        if let authorization = finalHeaders["Authorization"], authorization.starts(with: "Bearer ") {
+            let token = authorization.replacingOccurrences(of: "Bearer ", with: "").trimmingCharacters(in: .whitespaces)
+            if token.isEmpty, let storedToken = UserDefaults.standard.string(forKey: config.tokenStorageKey), !storedToken.isEmpty {
+                finalHeaders["Authorization"] = "Bearer \(storedToken)"
+            }
+        }
+        return finalHeaders
+    }
+}
+
+// MARK: - Error Handling
+extension NetworkManager {
+    func handleDecodedError<T: Decodable>(
+        from data: Data?,
+        statusCode: Int,
+        afError: AFError,
+        completion: @escaping (Result<T, NetworkError>, [AnyHashable: Any]?) -> Void
+    ) {
+        // Check if we can decode the error message
+        if let decodedError = decodeError(value: data) {
+            var errorMessage: String?
+            
+            switch decodedError.errors {
+            case .dictionary(let errorV2):
+                errorMessage = errorV2.message ?? "oops_text"
+                
+            case .array(let errorV3Array):
+                // Find the first valid error with both a code and message
+                errorMessage = errorV3Array.first(where: { $0.code != nil && $0.message != nil })?.message ?? "oops_text"
+                
+            case nil, .some(.none):
+                errorMessage = "oops_text"
+            }
+
+            // Use the error message extracted from the decoded error
+            completion(.failure(.UNHANDLED_ERROR(reason: errorMessage ?? "oops_text")), nil)
+        } else {
+           //add this if some time backkend error not comming correclty
+            if statusCode == 500{
+                completion(.failure(.SERVER_SIDE_ERROR), nil)
+                return
+            }
+            // Fallback to NetworkError if no decoded error
+            let networkError = afError.asNetworkError()
+            completion(.failure(networkError), nil)
+        }
+    }
+}
+
+extension NetworkManager {
+    func decodeError(value: Data?) -> CommonError? {
+        guard let data = value else {
+            // Log the error using NetworkLogger for nil data
+            Logger.shared.log("[🔴 ERROR] API RESPONSE: Provided value is nil")
+            return nil
+        }
+        do {
+            // Decode the data into CommonError
+            let commonError = try JSONDecoder().decode(CommonError.self, from: data)
+            return commonError
+        } catch {
+            // Log the decoding error using NetworkLogger
+            Logger.shared.log("[🔴 ERROR] Error during decoding: \(error.localizedDescription)")
+            return nil
+        }
+    }
+}
+
+
+// MARK: - Response Handling
+extension NetworkManager {
     private func handleResponse<T: Decodable>(
         response: DataResponse<T, AFError>,
         url: String,
@@ -282,77 +362,6 @@ public final class NetworkManager {
             default:
                 handleDecodedError(from: response.data, statusCode: statusCode, afError: afError, completion: completion)
             }
-        }
-    }
-}
-
-extension NetworkManager {
-    // MARK: - Authorization Check
-    func addAuthorizationIfMissing(_ headers: HTTPHeaders) -> HTTPHeaders? {
-        var finalHeaders = headers
-        if let authorization = finalHeaders["Authorization"], authorization.starts(with: "Bearer ") {
-            let token = authorization.replacingOccurrences(of: "Bearer ", with: "").trimmingCharacters(in: .whitespaces)
-            if token.isEmpty, let storedToken = UserDefaults.standard.string(forKey: config.tokenStorageKey), !storedToken.isEmpty {
-                finalHeaders["Authorization"] = "Bearer \(storedToken)"
-            }
-        }
-        return finalHeaders
-    }
-}
-
-extension NetworkManager {
-    func handleDecodedError<T: Decodable>(
-        from data: Data?,
-        statusCode: Int,
-        afError: AFError,
-        completion: @escaping (Result<T, NetworkError>, [AnyHashable: Any]?) -> Void
-    ) {
-        // Check if we can decode the error message
-        if let decodedError = decodeError(value: data) {
-            var errorMessage: String?
-            
-            switch decodedError.errors {
-            case .dictionary(let errorV2):
-                errorMessage = errorV2.message ?? "oops_text"
-                
-            case .array(let errorV3Array):
-                // Find the first valid error with both a code and message
-                errorMessage = errorV3Array.first(where: { $0.code != nil && $0.message != nil })?.message ?? "oops_text"
-                
-            case nil, .some(.none):
-                errorMessage = "oops_text"
-            }
-            
-            // Use the error message extracted from the decoded error
-            completion(.failure(.UNHANDLED_ERROR(reason: errorMessage ?? "oops_text")), nil)
-        } else {
-            //add this if some time backkend error not comming correclty
-            if statusCode == 500{
-                completion(.failure(.SERVER_SIDE_ERROR), nil)
-                return
-            }
-            // Fallback to NetworkError if no decoded error
-            let networkError = afError.asNetworkError()
-            completion(.failure(networkError), nil)
-        }
-    }
-}
-
-extension NetworkManager {
-    func decodeError(value: Data?) -> CommonError? {
-        guard let data = value else {
-            // Log the error using NetworkLogger for nil data
-            Logger.shared.log("[🔴 ERROR] API RESPONSE: Provided value is nil")
-            return nil
-        }
-        do {
-            // Decode the data into CommonError
-            let commonError = try JSONDecoder().decode(CommonError.self, from: data)
-            return commonError
-        } catch {
-            // Log the decoding error using NetworkLogger
-            Logger.shared.log("[🔴 ERROR] Error during decoding: \(error.localizedDescription)")
-            return nil
         }
     }
 }

@@ -14,6 +14,7 @@ class MockURLProtocol: URLProtocol {
     static var simulateNoInternet = false
     static var simulateSSLPinningError = false
     static var stubError: Error?
+    static var stubResponseHeaders: [String: String]? // Updated for header support
 
     override class func canInit(with request: URLRequest) -> Bool {
         return true
@@ -37,10 +38,16 @@ class MockURLProtocol: URLProtocol {
         else if let error = MockURLProtocol.stubError {
             client?.urlProtocol(self, didFailWithError: error)
         }
-        // Simulate success response with optional stubbed data
+        // Simulate success response with optional stubbed data and headers
         else {
-            let response = HTTPURLResponse(url: request.url!, statusCode: MockURLProtocol.stubResponseStatusCode, httpVersion: nil, headerFields: nil)!
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: MockURLProtocol.stubResponseStatusCode,
+                httpVersion: nil,
+                headerFields: MockURLProtocol.stubResponseHeaders
+            )!
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            
             if let data = MockURLProtocol.stubResponseData {
                 client?.urlProtocol(self, didLoad: data)
             }
@@ -56,6 +63,7 @@ class MockURLProtocol: URLProtocol {
         // Reset all static variables
         stubResponseData = nil
         stubResponseStatusCode = 200
+        stubResponseHeaders = nil // Reset headers
         simulateNoInternet = false
         simulateSSLPinningError = false
         stubError = nil

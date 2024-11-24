@@ -72,10 +72,9 @@ final class NetworkHelperTests: XCTestCase {
     }
     
 }
-
+//
 // MARK: - Async/await API Request Tests
 extension NetworkHelperTests {
-    
     // MARK: - SSL Pinning Failure Test
     func testSSLpinningFailure() async throws {
         // Simulate an SSL pinning error
@@ -224,9 +223,48 @@ extension NetworkHelperTests {
     
 }
 
+
+// MARK: -WithSuccessWithHeaders
+extension NetworkHelperTests {
+    func testMakeAPIRequestAsync_SuccessWithHeaders() async throws {
+        // Mocking response headers with [String: String]
+        let mockHeaders: [String: String] = [
+            "Content-Type": "application/json",
+            "Custom-Header": "HeaderValue"
+        ]
+        
+        let mockResponseData = """
+        {
+            "message": "Success",
+            "data": { "id": 1, "name": "Test" }
+        }
+        """.data(using: .utf8)!
+        MockURLProtocol.stubResponseData = mockResponseData
+        MockURLProtocol.stubResponseStatusCode = 200
+        MockURLProtocol.stubResponseHeaders = mockHeaders // Stubbing response headers
+        
+        // Make the API request
+        let (result, headers): (TestModel, [AnyHashable: Any]?) = try await networkHelper.makeAPIRequestAsync(
+            url: "https://example.com/api/test",
+            parameters: nil,
+            method: .get,
+            headers: HTTPHeaders()
+        )
+
+        // Access data
+        XCTAssertEqual(result.data.name, "Test")
+        XCTAssertEqual(result.data.id, 1)
+
+        // Access headers
+        if let headers = headers {
+            XCTAssertEqual(headers["Content-Type"] as? String, "application/json")
+            XCTAssertEqual(headers["Custom-Header"] as? String, "HeaderValue")
+        }
+    }
+}
+
 // MARK: - Traditional Callback API Request Tests
 extension NetworkHelperTests {
-    
     // MARK: - SSL Pinning Failure Test (Callback Version)
     func testSSLpinningFailureCallback() {
         // Simulate an SSL pinning error
@@ -240,7 +278,7 @@ extension NetworkHelperTests {
             parameters: nil,
             method: .get,
             headers: HTTPHeaders()
-        ) { (result: Result<TestModel, NetworkError>) in
+        ) { (result: Result<TestModel, NetworkError>, _) in
             switch result {
             case .failure(let error):
                 // For mock tests, we expect SSL Pinning to fail. However, in live apps, the error might fall back to GENERAL_NETWORK_ERROR.
@@ -276,7 +314,7 @@ extension NetworkHelperTests {
             parameters: nil,
             method: .get,
             headers: HTTPHeaders()
-        ) { (result: Result<TestModel, NetworkError>) in
+        ) { (result: Result<TestModel, NetworkError>, _) in
             switch result {
             case .success(let response):
                 XCTAssertEqual(response.data.name, "Test")
@@ -301,7 +339,7 @@ extension NetworkHelperTests {
             parameters: nil,
             method: .get,
             headers: HTTPHeaders()
-        ) { (result: Result<TestModel, NetworkError>) in
+        ) { (result: Result<TestModel, NetworkError>, _) in
             switch result {
             case .failure(let error):
                 XCTAssertEqual(error, .NETWORK_RESOURCE_NOT_FOUND)
@@ -325,7 +363,7 @@ extension NetworkHelperTests {
             parameters: nil,
             method: .get,
             headers: HTTPHeaders()
-        ) { (result: Result<TestModel, NetworkError>) in
+        ) { (result: Result<TestModel, NetworkError>, _) in
             switch result {
             case .failure(let error):
                 XCTAssertEqual(error, .UNAUTHENTICATED)
@@ -364,7 +402,7 @@ extension NetworkHelperTests {
             fileData: [mockFileData],
             method: .post,
             headers: HTTPHeaders()
-        ) { (result: Result<TestModel, NetworkError>) in
+        ) { (result: Result<TestModel, NetworkError>, _) in
             switch result {
             case .success(let response):
                 XCTAssertEqual(response.data.name, "UploadTest")
@@ -390,7 +428,7 @@ extension NetworkHelperTests {
             fileData: mockFileData,
             method: .post,
             headers: HTTPHeaders()
-        ) { (result: Result<TestModel, NetworkError>) in
+        ) { (result: Result<TestModel, NetworkError>, _) in
             // Then
             switch result {
             case .failure(let error):
@@ -419,7 +457,7 @@ extension NetworkHelperTests {
             parameters: nil,
             method: .get,
             headers: HTTPHeaders()
-        ) { (result: Result<TestModel, NetworkError>) in
+        ) { (result: Result<TestModel, NetworkError>, _) in
             // Then
             switch result {
             case .failure(let error):
@@ -452,7 +490,7 @@ extension NetworkHelperTests {
             parameters: nil,
             method: .get,
             headers: HTTPHeaders()
-        ) { (result: Result<TestModel, NetworkError>) in
+        ) { (result: Result<TestModel, NetworkError>, _) in
             // Then
             switch result {
             case .failure(let error):
@@ -522,7 +560,7 @@ extension NetworkHelperTests {
             from: errorData,
             statusCode: 400,
             afError: AFError.responseSerializationFailed(reason: .inputDataNilOrZeroLength)
-        ) { (result: Result<TestModel, NetworkError>) in
+        ) { (result: Result<TestModel, NetworkError>, _) in
             // Then: Verify failure due to dictionary error
             switch result {
             case .failure(let error):
@@ -553,7 +591,7 @@ extension NetworkHelperTests {
             from: errorData,
             statusCode: 400,
             afError: AFError.responseSerializationFailed(reason: .inputDataNilOrZeroLength)
-        ) { (result: Result<TestModel, NetworkError>) in
+        ) { (result: Result<TestModel, NetworkError>, _) in
             // Then: Verify failure due to array error
             switch result {
             case .failure(let error):
@@ -578,7 +616,7 @@ extension NetworkHelperTests {
             from: nilData,
             statusCode: 400,
             afError: AFError.responseSerializationFailed(reason: .inputDataNilOrZeroLength)
-        ) { (result: Result<TestModel, NetworkError>) in
+        ) { (result: Result<TestModel, NetworkError>, _) in
             // Then: Verify failure due to nil error data
             switch result {
             case .failure(let error):
@@ -607,7 +645,7 @@ extension NetworkHelperTests {
             from: invalidData,
             statusCode: 400,
             afError: AFError.responseSerializationFailed(reason: .inputDataNilOrZeroLength)
-        ) { (result: Result<TestModel, NetworkError>) in
+        ) { (result: Result<TestModel, NetworkError>, _) in
             // Then: Verify failure due to AFError fallback
             switch result {
             case .failure(let error):
