@@ -19,6 +19,7 @@ public enum LogType: String {
     case action = "[🔵 ACTION]"
     case canceled = "[🟤 CANCELED]"
     case other = "[⚪ OTHER]"
+    case debug = "[💻 DEBUG]"
 }
 
 final public class Logger {
