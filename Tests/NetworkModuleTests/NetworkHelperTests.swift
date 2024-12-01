@@ -86,7 +86,7 @@ extension NetworkHelperTests {
                 url: "https://example.com",
                 parameters: nil,
                 method: .get,
-                headers: HTTPHeaders()
+                headers: NetworkHeaders()
             )
             XCTFail("Expected SSL Pinning failure, but the request succeeded")
         } catch let error as NetworkError {
@@ -113,7 +113,7 @@ extension NetworkHelperTests {
             url: "https://example.com/api/test",
             parameters: nil,
             method: .get,
-            headers: HTTPHeaders()
+            headers: NetworkHeaders()
         )
         
         XCTAssertEqual(result.data.name, "Test")
@@ -128,7 +128,7 @@ extension NetworkHelperTests {
                 url: "https://example.com/api/test",
                 parameters: nil,
                 method: .get,
-                headers: HTTPHeaders()
+                headers: NetworkHeaders()
             )
             XCTFail("Expected 404 Not Found error")
         } catch let error as NetworkError {
@@ -145,7 +145,7 @@ extension NetworkHelperTests {
                 url: "https://example.com/api/test",
                 parameters: nil,
                 method: .get,
-                headers: HTTPHeaders()
+                headers: NetworkHeaders()
             )
             XCTFail("Expected 403 Forbidden error")
         } catch let error as NetworkError {
@@ -161,7 +161,7 @@ extension NetworkHelperTests {
                 url: "https://example.com/api/test",
                 parameters: nil,
                 method: .get,
-                headers: HTTPHeaders()
+                headers: NetworkHeaders()
             )
             XCTFail("Expected 500 Server Error")
         } catch let error as NetworkError {
@@ -193,7 +193,7 @@ extension NetworkHelperTests {
             parameters: nil,
             fileData: [mockFileData],
             method: .post,
-            headers: HTTPHeaders()
+            headers: NetworkHeaders()
         )
         
         XCTAssertEqual(result.data.name, "UploadTest")
@@ -213,7 +213,7 @@ extension NetworkHelperTests {
                 parameters: nil,
                 fileData: [mockFileData],
                 method: .post,
-                headers: HTTPHeaders()
+                headers: NetworkHeaders()
             )
             XCTFail("Expected error for missing MIME type")
         } catch let error as NetworkError {
@@ -248,7 +248,7 @@ extension NetworkHelperTests {
             url: "https://example.com/api/test",
             parameters: nil,
             method: .get,
-            headers: HTTPHeaders()
+            headers: NetworkHeaders()
         )
 
         // Access data
@@ -277,7 +277,7 @@ extension NetworkHelperTests {
             url: "https://example.com",
             parameters: nil,
             method: .get,
-            headers: HTTPHeaders()
+            headers: NetworkHeaders()
         ) { (result: Result<TestModel, NetworkError>, _) in
             switch result {
             case .failure(let error):
@@ -313,7 +313,7 @@ extension NetworkHelperTests {
             url: "https://example.com/api/test",
             parameters: nil,
             method: .get,
-            headers: HTTPHeaders()
+            headers: NetworkHeaders()
         ) { (result: Result<TestModel, NetworkError>, _) in
             switch result {
             case .success(let response):
@@ -338,7 +338,7 @@ extension NetworkHelperTests {
             url: "https://example.com/api/test",
             parameters: nil,
             method: .get,
-            headers: HTTPHeaders()
+            headers: NetworkHeaders()
         ) { (result: Result<TestModel, NetworkError>, _) in
             switch result {
             case .failure(let error):
@@ -362,7 +362,7 @@ extension NetworkHelperTests {
             url: "https://example.com/api/test",
             parameters: nil,
             method: .get,
-            headers: HTTPHeaders()
+            headers: NetworkHeaders()
         ) { (result: Result<TestModel, NetworkError>, _) in
             switch result {
             case .failure(let error):
@@ -401,7 +401,7 @@ extension NetworkHelperTests {
             parameters: nil,
             fileData: [mockFileData],
             method: .post,
-            headers: HTTPHeaders()
+            headers: NetworkHeaders()
         ) { (result: Result<TestModel, NetworkError>, _) in
             switch result {
             case .success(let response):
@@ -427,7 +427,7 @@ extension NetworkHelperTests {
             parameters: nil,
             fileData: mockFileData,
             method: .post,
-            headers: HTTPHeaders()
+            headers: NetworkHeaders()
         ) { (result: Result<TestModel, NetworkError>, _) in
             // Then
             switch result {
@@ -456,7 +456,7 @@ extension NetworkHelperTests {
             url: "https://example.com/api/test",
             parameters: nil,
             method: .get,
-            headers: HTTPHeaders()
+            headers: NetworkHeaders()
         ) { (result: Result<TestModel, NetworkError>, _) in
             // Then
             switch result {
@@ -489,7 +489,7 @@ extension NetworkHelperTests {
             url: "https://example.com/api/test",
             parameters: nil,
             method: .get,
-            headers: HTTPHeaders()
+            headers: NetworkHeaders()
         ) { (result: Result<TestModel, NetworkError>, _) in
             // Then
             switch result {
@@ -507,39 +507,38 @@ extension NetworkHelperTests {
 
 // MARK: - NetworkHelper Helper Methods Tests
 extension NetworkHelperTests {
-    
     // MARK: - Test: Add Authorization Header If Missing
+    
     func testAddAuthorizationIfMissing_MissingAuthorization() {
         // Simulate storing a valid token in UserDefaults
         UserDefaults.standard.set("validToken", forKey: "server_token_new")
         
-        let headers = HTTPHeaders(["Authorization": "Bearer "])  // Missing token after "Bearer"
+        let headers = NetworkHeaders(["Authorization": "Bearer "])  // Missing token after "Bearer"
         let finalHeaders = networkHelper.addAuthorizationIfMissing(headers)
         
         // Check if the Authorization header has been correctly updated with the stored token
-        XCTAssertNotNil(finalHeaders?["Authorization"])
-        XCTAssertEqual(finalHeaders?["Authorization"], "Bearer validToken")
+        XCTAssertNotNil(finalHeaders?.value(for: "Authorization"), "Authorization header should not be nil")
+        XCTAssertEqual(finalHeaders?.value(for: "Authorization"), "Bearer validToken", "Expected 'Bearer validToken'")
     }
     
     func testAddAuthorizationIfMissing_NoToken() {
         // Remove token from UserDefaults
         UserDefaults.standard.removeObject(forKey: "server_token_new")
         
-        let headers = HTTPHeaders(["Authorization": "Bearer "])  // Missing token after "Bearer"
+        let headers = NetworkHeaders(["Authorization": "Bearer "])  // Missing token after "Bearer"
         let finalHeaders = networkHelper.addAuthorizationIfMissing(headers)
         
         // Check if the Authorization header remains unchanged as no valid token is found
-        XCTAssertEqual(finalHeaders?["Authorization"], "Bearer ")
+        XCTAssertEqual(finalHeaders?.value(for: "Authorization"), "Bearer ", "Expected 'Bearer ' with no token")
     }
     
     func testAddAuthorizationIfMissing_ValidAuthorization() {
-        let headers = HTTPHeaders(["Authorization": "Bearer validTokenAlready"])
+        let headers = NetworkHeaders(["Authorization": "Bearer validTokenAlready"])
         let finalHeaders = networkHelper.addAuthorizationIfMissing(headers)
         
         // The Authorization header should not change as it already contains a valid token
-        XCTAssertEqual(finalHeaders?["Authorization"], "Bearer validTokenAlready")
+        XCTAssertEqual(finalHeaders?.value(for: "Authorization"), "Bearer validTokenAlready", "Authorization header should remain unchanged")
     }
-    
 }
 //
 // MARK: - Tests for handleDecodedError and decodeError
