@@ -85,12 +85,22 @@ public struct LoggerConfig {
     public var logResponseHeaders: Bool
     public var logResponseBody: Bool
     public var logStatusCode: Bool
-    
-    public static let `default` = LoggerConfig(
-        logRequestHeaders: true,
-        logRequestBody: true,
-        logResponseHeaders: true,
-        logResponseBody: true,
-        logStatusCode: true
-    )
+
+    // MARK: - Public Initializer
+    public init(
+        logRequestHeaders: Bool = true,
+        logRequestBody: Bool = true,
+        logResponseHeaders: Bool = true,
+        logResponseBody: Bool = true,
+        logStatusCode: Bool = true
+    ) {
+        self.logRequestHeaders = logRequestHeaders
+        self.logRequestBody = logRequestBody
+        self.logResponseHeaders = logResponseHeaders
+        self.logResponseBody = logResponseBody
+        self.logStatusCode = logStatusCode
+    }
+
+    // MARK: - Default Configuration
+    public static let `default` = LoggerConfig()
 }
