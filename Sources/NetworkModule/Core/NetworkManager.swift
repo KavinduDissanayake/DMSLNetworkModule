@@ -8,46 +8,64 @@
 import SwiftUI
 import Alamofire
 import LoggerModule
+
+
 //// MARK: - NetworkManager
-public final class NetworkManager {
-    
+public final class NetworkManager: NetworkManagerProtocol {
+
     public var customSession: Session
     private var config: NetworkConfiguration
-    private var interceptor: RequestInterceptor
-    
+
     // MARK: - Singleton
     public static var shared: NetworkManager = NetworkManager(configuration: NetworkConfiguration())
-    
+
     // MARK: - Initializer with Config
     public init(configuration: NetworkConfiguration = NetworkConfiguration()) {
         self.config = configuration
-        self.interceptor = RetryAndThrottleInterceptor(
-            retryLimit: configuration.retryLimit,
-            exponentialBackoffBase: configuration.exponentialBackoffBase,
-            exponentialBackoffScale: configuration.exponentialBackoffScale,
-            throttleInterval: configuration.throttleInterval
-        )
+
+        // Use the provided interceptor or default to RetryAndThrottleInterceptor
+        let requestInterceptor = configuration.requestInterceptor ??
+            RetryAndThrottleInterceptor(throttleInterval: configuration.throttleInterval)
+
+        // Configure the session with provided or default response interceptor
         self.customSession = NetworkManager.configureCustomSession(
-            retryPolicy: interceptor,
+            requestInterceptor: requestInterceptor,
+            responseInterceptor: configuration.responseInterceptor,
             enableSSLPinning: configuration.enableSSLPinning,
             pinnedDomains: configuration.pinnedDomains
         )
     }
-    
+
     // MARK: - Configure the Shared Instance
     public static func configure(with configuration: NetworkConfiguration) {
         NetworkManager.shared = NetworkManager(configuration: configuration)
     }
-    
+
     // MARK: - Configurable Custom Session
-    public static func configureCustomSession(retryPolicy: RequestInterceptor, enableSSLPinning: Bool, pinnedDomains: [String: ServerTrustEvaluating]) -> Session {
-        var serverTrustManager: ServerTrustManager?        
+    public static func configureCustomSession(
+        requestInterceptor: NetworkRequestInterceptor,
+        responseInterceptor: NetworkResponseInterceptor?,
+        enableSSLPinning: Bool,
+        pinnedDomains: [String: ServerTrustEvaluating]
+    ) -> Session {
+        var eventMonitors: [EventMonitor] = []
+
+        // Add response interceptor to the event monitors if provided
+        if let responseInterceptor = responseInterceptor {
+            eventMonitors.append(responseInterceptor)
+        }
+
+        // Configure server trust manager for SSL pinning if required
+        var serverTrustManager: ServerTrustManager?
         if enableSSLPinning && !pinnedDomains.isEmpty {
             serverTrustManager = ServerTrustManager(evaluators: pinnedDomains)
         }
+
+        // Return a custom session with the interceptors and monitors
         return Session(
-            interceptor: retryPolicy,
-            serverTrustManager: serverTrustManager
+            interceptor: requestInterceptor,
+            serverTrustManager: serverTrustManager,
+            eventMonitors: eventMonitors
         )
     }
 }
@@ -59,8 +77,8 @@ extension NetworkManager {
         url: String,
         parameters: [String: Any]?,
         method: NetworkHttpMethod = .post,
-        headers: HTTPHeaders,
-        encoding: ParameterEncoding? = nil
+        headers: NetworkHeaders,
+        encoding: NetworkEncodingType? = nil
     ) async throws -> T {
         return try await withCheckedThrowingContinuation { continuation in
             self.makeAPIRequest(url: url, parameters: parameters, method: method, headers: headers, encoding: encoding) { (result: Result<T, NetworkError>, _) in
@@ -79,8 +97,8 @@ extension NetworkManager {
         url: String,
         parameters: [String: Any]?,
         method: NetworkHttpMethod = .post,
-        headers: HTTPHeaders,
-        encoding: ParameterEncoding? = nil
+        headers: NetworkHeaders,
+        encoding: NetworkEncodingType? = nil
     ) async throws -> (T, [AnyHashable: Any]?) {
         return try await withCheckedThrowingContinuation { continuation in
             self.makeAPIRequest(url: url, parameters: parameters, method: method, headers: headers, encoding: encoding) { (result: Result<T, NetworkError>, headers) in
@@ -101,8 +119,8 @@ extension NetworkManager {
         url: String,
         parameters: [String: Any]?,
         method: NetworkHttpMethod = .post,
-        headers: HTTPHeaders,
-        encoding: ParameterEncoding? = nil,
+        headers: NetworkHeaders,
+        encoding: NetworkEncodingType? = nil,
         completion: @escaping (Result<T, NetworkError>, [AnyHashable: Any]?) -> Void
     ) {
         guard let validatedHeaders = addAuthorizationIfMissing(headers) else {
@@ -115,10 +133,10 @@ extension NetworkManager {
             return
         }
         
-        let requestEncoding = encoding ?? config.determineEncoding(for: method)
+        let requestEncoding = encoding?.encoding ?? config.determineEncoding(for: method).encoding
         
         customSession
-            .request(url, method: method.method, parameters: parameters, encoding: requestEncoding, headers: validatedHeaders)
+            .request(url, method: method.method, parameters: parameters, encoding: requestEncoding, headers: validatedHeaders.toHTTPHeaders())
             .validate(statusCode: 200..<300)
             .debugLog(using: config)
             .responseDecodable(of: T.self) { response in
@@ -135,8 +153,8 @@ extension NetworkManager {
         parameters: [String: Any]?,
         fileData: [UploadableData]?,
         method: NetworkHttpMethod = .post,
-        headers: HTTPHeaders,
-        encoding: ParameterEncoding? = nil,
+        headers: NetworkHeaders,
+        encoding: NetworkEncodingType? = nil,
         progressHandler: ((Double) -> Void)? = nil
     ) async throws -> T {
         return try await withCheckedThrowingContinuation { continuation in
@@ -165,8 +183,8 @@ extension NetworkManager {
         parameters: [String: Any]?,
         fileData: [UploadableData]?,
         method: NetworkHttpMethod = .post,
-        headers: HTTPHeaders,
-        encoding: ParameterEncoding? = nil,
+        headers: NetworkHeaders,
+        encoding: NetworkEncodingType? = nil,
         progressHandler: ((Double) -> Void)? = nil
     ) async throws -> (T, [AnyHashable: Any]?) {
         return try await withCheckedThrowingContinuation { continuation in
@@ -197,8 +215,8 @@ extension NetworkManager {
         parameters: [String: Any]?,
         fileData: [UploadableData]?,
         method: NetworkHttpMethod = .post,
-        headers: HTTPHeaders,
-        encoding: ParameterEncoding? = nil,
+        headers: NetworkHeaders,
+        encoding: NetworkEncodingType? = nil,
         progressHandler: ((Double) -> Void)? = nil,
         completion: @escaping (Result<T, NetworkError>, [AnyHashable: Any]?) -> Void
     ) {
@@ -229,7 +247,7 @@ extension NetworkManager {
                 multipartFormData.append(file.fileData, withName: file.fileDataParamName, fileName: file.fileName, mimeType: file.mimeType)
                 multipartFormData.append(file.fileTypeData, withName: file.fileType)
             }
-        }, to: url, method: method.method, headers: validatedHeaders)
+        }, to: url, method: method.method, headers: validatedHeaders.toHTTPHeaders())
         .validate(statusCode: 200..<300)
         .uploadProgress { progressHandler?($0.fractionCompleted) }
         .responseDecodable(of: T.self) { response in
@@ -241,14 +259,20 @@ extension NetworkManager {
 
 // MARK: - Authorization Check
 extension NetworkManager {
-     func addAuthorizationIfMissing(_ headers: HTTPHeaders) -> HTTPHeaders? {
+    /// Ensures that the Authorization header is present and valid.
+    /// If the Authorization token is empty, attempts to retrieve it from UserDefaults.
+    /// - Parameter headers: The `NetworkHeaders` object to validate and modify.
+    /// - Returns: The validated `NetworkHeaders` object, or `nil` if validation fails.
+    func addAuthorizationIfMissing(_ headers: NetworkHeaders) -> NetworkHeaders? {
         var finalHeaders = headers
-        if let authorization = finalHeaders["Authorization"], authorization.starts(with: "Bearer ") {
+
+        if let authorization = finalHeaders.value(for: "Authorization"), authorization.starts(with: "Bearer ") {
             let token = authorization.replacingOccurrences(of: "Bearer ", with: "").trimmingCharacters(in: .whitespaces)
             if token.isEmpty, let storedToken = UserDefaults.standard.string(forKey: config.tokenStorageKey), !storedToken.isEmpty {
-                finalHeaders["Authorization"] = "Bearer \(storedToken)"
+                finalHeaders.add("Bearer \(storedToken)", for: "Authorization")
             }
         }
+
         return finalHeaders
     }
 }
@@ -296,7 +320,7 @@ extension NetworkManager {
     func decodeError(value: Data?) -> CommonError? {
         guard let data = value else {
             // Log the error using NetworkLogger for nil data
-            Logger.shared.log("[🔴 ERROR] API RESPONSE: Provided value is nil")
+            Logger.shared.log("API RESPONSE: Provided value is nil",type: .error)
             return nil
         }
         do {
@@ -305,7 +329,7 @@ extension NetworkManager {
             return commonError
         } catch {
             // Log the decoding error using NetworkLogger
-            Logger.shared.log("[🔴 ERROR] Error during decoding: \(error.localizedDescription)")
+            Logger.shared.log("Error during decoding: \(error.localizedDescription)",type: .error)
             return nil
         }
     }

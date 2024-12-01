@@ -46,7 +46,7 @@ public final class StatusHandler {
             }
         }
         // No matching rule found
-        Logger.shared.log("[StatusHandler] No rule matched for status code: \(statusCode), URL: \(url)")
+        Logger.shared.log("[StatusHandler] No rule matched for status code: \(statusCode), URL: \(url)",type: .info)
     }
     
     
